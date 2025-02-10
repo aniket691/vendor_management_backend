@@ -1,4 +1,4 @@
-name: Docker CI/CD
+name: Docker CI/CD and Deploy to AWS Lightsail
 
 on:
   push:
@@ -11,6 +11,7 @@ env:
   REGISTRY: docker.io
   # github.repository as <account>/<repo>
   IMAGE_NAME: ${{ github.repository }}
+  AWS_REGION: ap-south-1  # Change to your region
 
 jobs:
   build:
@@ -65,3 +66,36 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Build and push to Lightsail
+        run: |
+          # Build Docker image
+          docker build -t vmb-app .
+          
+          # Install Lightsail plugin
+          sudo curl "https://s3.us-west-2.amazonaws.com/lightsailctl/latest/linux-amd64/lightsailctl" -o "/usr/local/bin/lightsailctl"
+          sudo chmod +x /usr/local/bin/lightsailctl
+          
+          # Push to Lightsail
+          aws lightsail push-container-image \
+            --service-name vmb-service \
+            --label vmb-app \
+            --image vmb-app:latest
+          
+          # Deploy
+          aws lightsail create-container-service-deployment \
+            --service-name vmb-service \
+            --containers file://lightsail-container.json \
+            --public-endpoint file://lightsail-container.json
